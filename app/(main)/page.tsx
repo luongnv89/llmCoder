@@ -47,7 +47,7 @@ export default function Home() {
     e.preventDefault();
 
     if (status !== "initial") {
-      scrollTo({ delay: 0.5 });
+      scrollTo();
     }
 
     setStatus("creating");

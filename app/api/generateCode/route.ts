@@ -1,9 +1,7 @@
 import dedent from "dedent";
 import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const apiKey = process.env.GOOGLE_AI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
+const ollamaApiUrl = "http://localhost:11434/api/generate"; // Ollama API endpoint
 
 export async function POST(req: Request) {
   let json = await req.json();
@@ -26,30 +24,41 @@ export async function POST(req: Request) {
   let { model, messages } = result.data;
   let systemPrompt = getSystemPrompt();
 
-  const geminiModel = genAI.getGenerativeModel({model: model});
+  const prompt =
+    messages[0].content +
+    systemPrompt +
+    "\nPlease ONLY return code, NO backticks or language names. Don't start with ```typescript or ```javascript or ```tsx or ```.";
 
-  const geminiStream = await geminiModel.generateContentStream(
-    messages[0].content + systemPrompt + "\nPlease ONLY return code, NO backticks or language names. Don't start with \`\`\`typescript or \`\`\`javascript or \`\`\`tsx or \`\`\`."
-  );
+  console.log(prompt);
 
-  console.log(messages[0].content + systemPrompt + "\nPlease ONLY return code, NO backticks or language names. Don't start with \`\`\`typescript or \`\`\`javascript or \`\`\`tsx or \`\`\`.")
-
-  const readableStream = new ReadableStream({
-    async start(controller) {
-      for await (const chunk of geminiStream.stream) {
-        const chunkText = chunk.text();
-        controller.enqueue(new TextEncoder().encode(chunkText));
-      }
-      controller.close();
+  const ollamaResponse = await fetch(ollamaApiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      model: model,
+      prompt: prompt,
+      stream: false, // Disable streaming
+    }),
   });
 
-  return new Response(readableStream);
+  if (!ollamaResponse.ok) {
+    return new Response("Failed to fetch response from Ollama API", {
+      status: 500,
+    });
+  }
+
+  const responseData = await ollamaResponse.json();
+  const responseText = responseData.response; // Extract the response text from Ollama
+
+  return new Response(responseText, {
+    headers: { "Content-Type": "text/plain" },
+  });
 }
 
 function getSystemPrompt() {
-  let systemPrompt = 
-`You are an expert frontend React engineer who is also a great UI/UX designer. Follow the instructions carefully, I will tip you $1 million if you do a good job:
+  let systemPrompt = `You are an expert frontend React engineer who is also a great UI/UX designer. Follow the instructions carefully, I will tip you $1 million if you do a good job:
 
 - Think carefully step by step.
 - Create a React component for whatever the user asked you to create and make sure it can run by itself by using a default export
